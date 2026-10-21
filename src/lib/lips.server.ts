@@ -16,29 +16,39 @@ export async function runLipAnalysis(image: string) {
   const lovableApiKey = process.env['LOVABLE_API_KEY']
 
   if (geminiApiKey) {
-    const google = createGoogleGenerativeAI({ apiKey: geminiApiKey })
+    try {
+      const google = createGoogleGenerativeAI({ apiKey: geminiApiKey })
 
-    // image es un data URL como "data:image/jpeg;base64,/9j/..."
-    const [meta, b64] = image.split(',')
-    const mimeType = (meta.match(/data:([^;]+);/) ?? [])[1] ?? 'image/jpeg'
-    const imageData = Buffer.from(b64, 'base64')
+      // image es "data:image/jpeg;base64,..." — extraemos sólo el base64 puro
+      const commaIdx = image.indexOf(',')
+      const meta = commaIdx > -1 ? image.slice(0, commaIdx) : ''
+      const b64 = commaIdx > -1 ? image.slice(commaIdx + 1) : image
+      const mimeType = (meta.match(/data:([^;]+);/) ?? [])[1] ?? 'image/jpeg'
 
-    const { text } = await generateText({
-      model: google('gemini-2.5-flash'),
-      messages: [
-        {
-          role: 'user',
-          content: [
-            { type: 'text', text: `${INSTRUCTIONS}\n\nResponde estrictamente con un JSON con el siguiente formato:\n{"isFace":boolean,"summary":string,"faceShape":string,"lipShape":string,"balance":string,"steps":[],"colors":[],"avoid":[]}` },
-            { type: 'image', image: imageData, mimeType: mimeType as `image/${string}` }
-          ]
-        }
-      ]
-    })
+      const { text } = await generateText({
+        model: google('gemini-1.5-flash'),
+        messages: [
+          {
+            role: 'user',
+            content: [
+              { type: 'text', text: `${INSTRUCTIONS}\n\nResponde estrictamente con un JSON con el siguiente formato:\n{"isFace":boolean,"summary":string,"faceShape":string,"lipShape":string,"balance":string,"steps":[],"colors":[],"avoid":[]}` },
+              { type: 'image', image: b64, mimeType: mimeType as `image/${string}` }
+            ]
+          }
+        ]
+      })
 
-    const cleaned = text.replace(/```json\n?/g, '').replace(/```/g, '').trim()
-    const parsed = JSON.parse(cleaned.slice(cleaned.indexOf('{'), cleaned.lastIndexOf('}') + 1))
-    return normalizeLipAnalysis(parsed)
+      const cleaned = text.replace(/```json\n?/g, '').replace(/```/g, '').trim()
+      const parsed = JSON.parse(cleaned.slice(cleaned.indexOf('{'), cleaned.lastIndexOf('}') + 1))
+      return normalizeLipAnalysis(parsed)
+    } catch (geminiErr) {
+      console.error('[lips] Gemini error:', geminiErr instanceof Error ? geminiErr.message : geminiErr)
+      const lovableApiKey2 = process.env['LOVABLE_API_KEY']
+      if (!lovableApiKey2) {
+        throw new Error(geminiErr instanceof Error ? geminiErr.message : 'Error al conectar con Gemini. Verifica que GEMINI_API_KEY sea válida.')
+      }
+      // Si hay Lovable key, dejamos caer al fallback
+    }
   }
 
   if (!lovableApiKey) {
@@ -52,13 +62,13 @@ export async function runLipAnalysis(image: string) {
     fetch: runIdFetch.fetch,
   })
   let failure: unknown
-  const [metaFb, b64Fb] = image.split(',')
-  const mimeTypeFb = (metaFb.match(/data:([^;]+);/) ?? [])[1] ?? 'image/jpeg'
-  const imageDataFb = Buffer.from(b64Fb, 'base64')
+  const fbCommaIdx = image.indexOf(',')
+  const fbMimeType = (image.slice(0, fbCommaIdx).match(/data:([^;]+);/) ?? [])[1] ?? 'image/jpeg'
+  const fbB64 = fbCommaIdx > -1 ? image.slice(fbCommaIdx + 1) : image
   const result = streamText({
     model: provider.responses('openai/gpt-6-astra'),
     instructions: INSTRUCTIONS,
-    messages: [{ role: 'user', content: [{ type: 'text', text: 'Recomienda un cuidado natural de labios sin maquillaje según este rostro, sin prometer aumento real de volumen.' }, { type: 'image', image: imageDataFb, mimeType: mimeTypeFb as `image/${string}` }] }],
+    messages: [{ role: 'user', content: [{ type: 'text', text: 'Recomienda un cuidado natural de labios sin maquillaje según este rostro, sin prometer aumento real de volumen.' }, { type: 'image', image: fbB64, mimeType: fbMimeType as `image/${string}` }] }],
     output: Output.object({ schema: lipAnalysisSchema }),
     maxRetries: 0,
     onError: ({ error }) => { failure = error },

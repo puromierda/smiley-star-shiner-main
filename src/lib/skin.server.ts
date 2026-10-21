@@ -30,30 +30,39 @@ export async function runSkinAnalysis(image: string): Promise<SkinAnalysis> {
 
   // Si hay API key de Gemini (Google AI Studio)
   if (geminiApiKey) {
-    const google = createGoogleGenerativeAI({ apiKey: geminiApiKey });
+    try {
+      const google = createGoogleGenerativeAI({ apiKey: geminiApiKey });
 
-    // image es un data URL como "data:image/jpeg;base64,/9j/..."
-    // Extraer mimeType y datos base64 puros para el SDK
-    const [meta, b64] = image.split(',');
-    const mimeType = (meta.match(/data:([^;]+);/) ?? [])[1] ?? 'image/jpeg';
-    const imageData = Buffer.from(b64, 'base64');
+      // image es "data:image/jpeg;base64,/9j/..." — extraemos sólo el base64 puro
+      const commaIdx = image.indexOf(',');
+      const meta = commaIdx > -1 ? image.slice(0, commaIdx) : '';
+      const b64 = commaIdx > -1 ? image.slice(commaIdx + 1) : image;
+      const mimeType = (meta.match(/data:([^;]+);/) ?? [])[1] ?? 'image/jpeg';
 
-    const { text } = await generateText({
-      model: google('gemini-2.5-flash'),
-      messages: [
-        {
-          role: 'user',
-          content: [
-            { type: 'text', text: PROMPT },
-            { type: 'image', image: imageData, mimeType: mimeType as `image/${string}` }
-          ]
-        }
-      ]
-    });
+      const { text } = await generateText({
+        model: google('gemini-1.5-flash'),
+        messages: [
+          {
+            role: 'user',
+            content: [
+              { type: 'text', text: PROMPT },
+              { type: 'image', image: b64, mimeType: mimeType as `image/${string}` }
+            ]
+          }
+        ]
+      });
 
-    const cleaned = text.replace(/```json\n?/g, '').replace(/```/g, '').trim();
-    const parsed = JSON.parse(cleaned.slice(cleaned.indexOf('{'), cleaned.lastIndexOf('}') + 1));
-    return normalizeSkinAnalysis(parsed);
+      const cleaned = text.replace(/```json\n?/g, '').replace(/```/g, '').trim();
+      const parsed = JSON.parse(cleaned.slice(cleaned.indexOf('{'), cleaned.lastIndexOf('}') + 1));
+      return normalizeSkinAnalysis(parsed);
+    } catch (geminiErr) {
+      console.error('[skin] Gemini error:', geminiErr instanceof Error ? geminiErr.message : geminiErr);
+      // Si no hay Lovable key tampoco, lanzamos el error de Gemini
+      if (!lovableApiKey) {
+        throw new Error(geminiErr instanceof Error ? geminiErr.message : 'Error al conectar con Gemini. Verifica que GEMINI_API_KEY sea válida.');
+      }
+      // Si hay Lovable key, dejamos caer al fallback
+    }
   }
 
   // Fallback con Lovable Gateway
