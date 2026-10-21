@@ -12,7 +12,10 @@ Usa exclusivamente estos pasos de cuidado: ${JSON.stringify(LIP_CARE_STEPS)}. Pr
 Si no hay un rostro con los labios claramente visibles, isFace=false, explica cómo repetir la foto en summary y devuelve los demás textos vacíos y listas vacías.`
 
 export async function runLipAnalysis(image: string) {
-  const geminiApiKey = process.env['GEMINI_API_KEY'] || process.env['GOOGLE_GENERATIVE_AI_API_KEY']
+  const geminiApiKey =
+    process.env['GEMINI_API_KEY'] ||
+    process.env['VITE_GEMINI_API_KEY'] ||
+    process.env['GOOGLE_GENERATIVE_AI_API_KEY']
   const lovableApiKey = process.env['LOVABLE_API_KEY']
 
   if (geminiApiKey) {

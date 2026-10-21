@@ -25,7 +25,10 @@ Reglas: 3 a 5 concerns ordenados por importancia; morning 3-5 pasos terminando e
 Si la foto no muestra un rostro con claridad, pon isFace=false, categories=[], listas vacías y explica cómo repetir la foto en summary.`;
 
 export async function runSkinAnalysis(image: string): Promise<SkinAnalysis> {
-  const geminiApiKey = process.env['GEMINI_API_KEY'] || process.env['GOOGLE_GENERATIVE_AI_API_KEY'];
+  const geminiApiKey =
+    process.env['GEMINI_API_KEY'] ||
+    process.env['VITE_GEMINI_API_KEY'] ||
+    process.env['GOOGLE_GENERATIVE_AI_API_KEY'];
   const lovableApiKey = process.env['LOVABLE_API_KEY'];
 
   // Si hay API key de Gemini (Google AI Studio)
