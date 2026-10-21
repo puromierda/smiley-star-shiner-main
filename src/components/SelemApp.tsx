@@ -464,7 +464,12 @@ export default function App() {
     try {
       const res = await runSkin({ data: { image: small } })
       if (res.ok) {
-        const scan = await saveScan(small, res.analysis)
+        let scan: SavedScan | null = null
+        try {
+          scan = await saveScan(small, res.analysis)
+        } catch {
+          scan = { id: String(Date.now()), date: new Date().toISOString(), photo: small, analysis: res.analysis }
+        }
         const before = journey && await loadScan(journey.beforeId)
         if (afterMode && journey && before && res.analysis.isFace) {
           const done = { ...journey, afterId: scan.id }
@@ -553,8 +558,7 @@ export default function App() {
         )
       )}
       {view === 'Rutinas' && <Routines open={routineKey} onOpen={setRoutineKey} onScan={() => navigate('Mi piel')} />}
-      {view === 'Mi piel' && !userId && <main className="scanner-page fade-up"><div className="scanner-copy"><p className="font-script section-script">Tu cuenta</p><h1 className="font-display">Entra para guardar tu piel</h1><p>Tus escaneos, rutinas y fotos se guardan en tu cuenta y los verás en cualquier equipo.</p></div>{error && <p role="alert">{error}</p>}<div className="photo-actions"><button className="scan-trigger" onClick={signIn}><span><Icon name="user" size={24} /></span>Continuar con Google</button></div></main>}
-      {view === 'Mi piel' && userId && (loading
+      {view === 'Mi piel' && (loading
         ? <main className="loading-page fade-up"><div className="loading-orb"><Icon name="sparkle" size={28} /></div><p className="font-script">Analizando tu piel…</p><span>Identificando necesidades y preparando tu rutina</span></main>
         : compare
           ? <Comparison before={compare.before} after={compare.after} onClose={closeCompare} />
