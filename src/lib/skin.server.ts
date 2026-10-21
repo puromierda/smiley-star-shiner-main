@@ -40,7 +40,7 @@ export async function runSkinAnalysis(image: string): Promise<SkinAnalysis> {
       const mimeType = (meta.match(/data:([^;]+);/) ?? [])[1] ?? 'image/jpeg';
 
       const { text } = await generateText({
-        model: google('gemini-2.0-flash'),
+        model: google('gemini-2.5-flash'),
         messages: [
           {
             role: 'user',
