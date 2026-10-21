@@ -1,9 +1,9 @@
 import { createOpenAI } from "@ai-sdk/openai";
-import { createGoogleGenerativeAI } from "@ai-sdk/google";
-import { generateText, streamText } from "ai";
+import { streamText } from "ai";
 import { createLovableAiGatewayRunIdFetch } from "./run-id.server";
 import { normalizeSkinAnalysis, SKIN_REFERENCE } from "./skin-guide";
 import type { SkinAnalysis } from "./analysis-types";
+import { generateGeminiVisionJson } from "./gemini-client.server";
 
 const PROMPT = `Eres la especialista en cuidado de la piel de "Selem Beauty", con criterio de cosmetóloga experta. Analiza la foto del rostro.
 Evalúa solo lo que se observa con claridad: tipo de piel aparente, brillo, poros, textura, deshidratación, rojeces, manchas, líneas finas, imperfecciones y ojeras. No diagnostiques enfermedades; si ves algo que parece requerir un médico (lesiones, acné severo, lunares irregulares), indícalo en medicalNote.
@@ -31,43 +31,32 @@ export async function runSkinAnalysis(image: string): Promise<SkinAnalysis> {
   // Si hay API key de Gemini (Google AI Studio)
   if (geminiApiKey) {
     try {
-      const google = createGoogleGenerativeAI({ apiKey: geminiApiKey });
-
       // image es "data:image/jpeg;base64,/9j/..." — extraemos sólo el base64 puro
       const commaIdx = image.indexOf(',');
       const meta = commaIdx > -1 ? image.slice(0, commaIdx) : '';
       const b64 = commaIdx > -1 ? image.slice(commaIdx + 1) : image;
       const mimeType = (meta.match(/data:([^;]+);/) ?? [])[1] ?? 'image/jpeg';
 
-      const { text } = await generateText({
-        model: google('gemini-2.5-flash'),
-        messages: [
-          {
-            role: 'user',
-            content: [
-              { type: 'text', text: PROMPT },
-              { type: 'image', image: b64, mimeType: mimeType as `image/${string}` }
-            ]
-          }
-        ]
+      const parsed = await generateGeminiVisionJson<unknown>({
+        apiKey: geminiApiKey,
+        prompt: PROMPT,
+        imageBase64: b64,
+        mimeType,
       });
 
-      const cleaned = text.replace(/```json\n?/g, '').replace(/```/g, '').trim();
-      const parsed = JSON.parse(cleaned.slice(cleaned.indexOf('{'), cleaned.lastIndexOf('}') + 1));
       return normalizeSkinAnalysis(parsed);
     } catch (geminiErr) {
       console.error('[skin] Gemini error:', geminiErr instanceof Error ? geminiErr.message : geminiErr);
-      // Si no hay Lovable key tampoco, lanzamos el error de Gemini
       if (!lovableApiKey) {
-        throw new Error(geminiErr instanceof Error ? geminiErr.message : 'Error al conectar con Gemini. Verifica que GEMINI_API_KEY sea válida.');
+        throw geminiErr;
       }
-      // Si hay Lovable key, dejamos caer al fallback
+      // Si hay Lovable key, dejamos caer al fallback de Lovable
     }
   }
 
   // Fallback con Lovable Gateway
   if (!lovableApiKey) {
-    throw new Error("Falta configurar la IA. Agrega GEMINI_API_KEY en Netlify.");
+    throw new Error("Falta configurar la IA. Agrega GEMINI_API_KEY en las variables de entorno.");
   }
 
   const runIdFetch = createLovableAiGatewayRunIdFetch();

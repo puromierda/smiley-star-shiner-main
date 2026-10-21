@@ -1,8 +1,8 @@
 import { createOpenAI } from '@ai-sdk/openai'
-import { createGoogleGenerativeAI } from '@ai-sdk/google'
-import { APICallError, Output, generateText, streamText } from 'ai'
+import { APICallError, Output, streamText } from 'ai'
 import { createLovableAiGatewayRunIdFetch } from './run-id.server.ts'
 import { lipAnalysisSchema, normalizeLipAnalysis, LIP_CARE_STEPS, LIP_CARE_AVOID } from './lip-analysis'
+import { generateGeminiVisionJson } from './gemini-client.server'
 
 const INSTRUCTIONS = `Eres la especialista en cuidado de labios de Selem Beauty. Observa esta foto de frente y ofrece una rutina natural de cuidado SIN maquillaje para unos labios hidratados, suaves y de aspecto más terso, respetando la forma aparente del rostro y sus proporciones.
 No identifiques a la persona ni infieras edad, origen, salud o personalidad. No diagnostiques ni recomiendes rellenos, inyecciones, cirugía, irritantes, succión o remedios caseros. No prometas aumento real ni resultados garantizados.
@@ -17,42 +17,32 @@ export async function runLipAnalysis(image: string) {
 
   if (geminiApiKey) {
     try {
-      const google = createGoogleGenerativeAI({ apiKey: geminiApiKey })
-
       // image es "data:image/jpeg;base64,..." — extraemos sólo el base64 puro
       const commaIdx = image.indexOf(',')
       const meta = commaIdx > -1 ? image.slice(0, commaIdx) : ''
       const b64 = commaIdx > -1 ? image.slice(commaIdx + 1) : image
       const mimeType = (meta.match(/data:([^;]+);/) ?? [])[1] ?? 'image/jpeg'
 
-      const { text } = await generateText({
-        model: google('gemini-2.5-flash'),
-        messages: [
-          {
-            role: 'user',
-            content: [
-              { type: 'text', text: `${INSTRUCTIONS}\n\nResponde estrictamente con un JSON con el siguiente formato:\n{"isFace":boolean,"summary":string,"faceShape":string,"lipShape":string,"balance":string,"steps":[],"colors":[],"avoid":[]}` },
-              { type: 'image', image: b64, mimeType: mimeType as `image/${string}` }
-            ]
-          }
-        ]
+      const parsed = await generateGeminiVisionJson<unknown>({
+        apiKey: geminiApiKey,
+        prompt: `${INSTRUCTIONS}\n\nResponde estrictamente con un JSON con el siguiente formato:\n{"isFace":boolean,"summary":string,"faceShape":string,"lipShape":string,"balance":string,"steps":[],"colors":[],"avoid":[]}`,
+        imageBase64: b64,
+        mimeType,
       })
 
-      const cleaned = text.replace(/```json\n?/g, '').replace(/```/g, '').trim()
-      const parsed = JSON.parse(cleaned.slice(cleaned.indexOf('{'), cleaned.lastIndexOf('}') + 1))
       return normalizeLipAnalysis(parsed)
     } catch (geminiErr) {
       console.error('[lips] Gemini error:', geminiErr instanceof Error ? geminiErr.message : geminiErr)
       const lovableApiKey2 = process.env['LOVABLE_API_KEY']
       if (!lovableApiKey2) {
-        throw new Error(geminiErr instanceof Error ? geminiErr.message : 'Error al conectar con Gemini. Verifica que GEMINI_API_KEY sea válida.')
+        throw geminiErr
       }
       // Si hay Lovable key, dejamos caer al fallback
     }
   }
 
   if (!lovableApiKey) {
-    throw new Error('Falta configurar la IA. Agrega GEMINI_API_KEY en Netlify.')
+    throw new Error('Falta configurar la IA. Agrega GEMINI_API_KEY en las variables de entorno.')
   }
 
   const runIdFetch = createLovableAiGatewayRunIdFetch()
@@ -68,7 +58,7 @@ export async function runLipAnalysis(image: string) {
   const result = streamText({
     model: provider.responses('openai/gpt-6-astra'),
     instructions: INSTRUCTIONS,
-    messages: [{ role: 'user', content: [{ type: 'text', text: 'Recomienda un cuidado natural de labios sin maquillaje según este rostro, sin prometer aumento real de volumen.' }, { type: 'image', image: fbB64, mimeType: fbMimeType as `image/${string}` }] }],
+    messages: [{ role: 'user', content: [{ type: 'text', text: 'Recomienda un cuidado natural de labios sin maquillaje según este rostro, sin prometer aumento real de volumen.' }, { type: 'image', image: fbB64, mediaType: fbMimeType }] }],
     output: Output.object({ schema: lipAnalysisSchema }),
     maxRetries: 0,
     onError: ({ error }) => { failure = error },

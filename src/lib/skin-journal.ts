@@ -1,34 +1,59 @@
-import { supabase } from '@/integrations/supabase/client'
 import type { SkinAnalysis } from './analysis-types'
 import { normalizeSkinAnalysis } from './skin-guide'
 
 export type SavedScan = { id: string; date: string; photo: string; analysis: SkinAnalysis }
 export type Journey = { beforeId: string; startedAt: string; afterId: string | null }
 
-type Row = { id: string; created_at: string; photo: string; analysis: unknown }
-const toScan = (r: Row): SavedScan => ({ id: r.id, date: r.created_at, photo: r.photo, analysis: normalizeSkinAnalysis(r.analysis as never) })
+// Almacenamiento local (sin Supabase / Firebase pendiente de integración)
+const SCANS_KEY = 'selem_scans'
+const JOURNEY_KEY = 'selem_journey'
+
+function loadScansFromStorage(): SavedScan[] {
+  try {
+    return JSON.parse(localStorage.getItem(SCANS_KEY) ?? '[]')
+  } catch {
+    return []
+  }
+}
+
+function saveScansToStorage(scans: SavedScan[]) {
+  localStorage.setItem(SCANS_KEY, JSON.stringify(scans))
+}
 
 export async function loadScan(id: string): Promise<SavedScan | null> {
-  const { data } = await supabase.from('scans').select('id, created_at, photo, analysis').eq('id', id).maybeSingle()
-  return data ? toScan(data as Row) : null
+  const scans = loadScansFromStorage()
+  return scans.find((s) => s.id === id) ?? null
 }
 
 export async function loadJourney(): Promise<Journey | null> {
-  const { data } = await supabase.from('journeys').select('before_id, after_id, started_at').maybeSingle()
-  return data ? { beforeId: data.before_id, afterId: data.after_id, startedAt: data.started_at } : null
+  try {
+    const raw = localStorage.getItem(JOURNEY_KEY)
+    return raw ? JSON.parse(raw) : null
+  } catch {
+    return null
+  }
 }
 
 export async function saveScan(photo: string, analysis: SkinAnalysis): Promise<SavedScan> {
-  const { data, error } = await supabase.from('scans').insert({ photo, analysis: analysis as never }).select('id, created_at, photo, analysis').single()
-  if (error || !data) throw error ?? new Error('No se pudo guardar')
-  return toScan(data as Row)
+  const scan: SavedScan = {
+    id: crypto.randomUUID(),
+    date: new Date().toISOString(),
+    photo,
+    analysis: normalizeSkinAnalysis(analysis as never),
+  }
+  const scans = loadScansFromStorage()
+  scans.unshift(scan)
+  // Máximo 50 escaneos guardados localmente
+  saveScansToStorage(scans.slice(0, 50))
+  return scan
 }
 
 export async function saveJourney(j: Journey | null) {
-  const { data: u } = await supabase.auth.getUser()
-  if (!u.user) return
-  if (!j) { await supabase.from('journeys').delete().eq('user_id', u.user.id); return }
-  await supabase.from('journeys').upsert({ user_id: u.user.id, before_id: j.beforeId, after_id: j.afterId, started_at: j.startedAt })
+  if (!j) {
+    localStorage.removeItem(JOURNEY_KEY)
+  } else {
+    localStorage.setItem(JOURNEY_KEY, JSON.stringify(j))
+  }
 }
 
 export function daysSince(iso: string) {

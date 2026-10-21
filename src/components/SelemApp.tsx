@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button'
 import type { SkinAnalysis, RoutineStep } from '@/lib/analysis-types'
 import { categoryName, SKIN_CATEGORIES, type CategoryKey } from '@/lib/skin-guide'
 import faceScan from '@/assets/face-scan.jpg'
-import { supabase } from '@/integrations/supabase/client'
+// Firebase auth se integrará aquí
 import { lovable } from '@/integrations/lovable/index'
 import { daysSince, loadJourney, loadScan, saveJourney, saveScan, type Journey, type SavedScan } from '@/lib/skin-journal'
 
@@ -440,18 +440,13 @@ export default function App() {
   const [afterMode, setAfterMode] = useState(false)
   const [compare, setCompare] = useState<{ before: SavedScan; after: SavedScan } | null>(null)
 
-  const [userId, setUserId] = useState<string | null>(null)
+  // TODO: reemplazar con Firebase Auth
+  const userId: string | null = null
+  function signIn() {
+    // Placeholder para la futura integración con Firebase Auth
+    console.info('Iniciar sesión: pendiente de integración con Firebase Auth')
+  }
   useEffect(() => {
-    lipRequest.current += 1
-    setLipResult(null); setLipError(null); setLipLoading(false)
-  }, [userId])
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => setUserId(data.session?.user.id ?? null))
-    const { data } = supabase.auth.onAuthStateChange((_e, session) => setUserId(session?.user.id ?? null))
-    return () => data.subscription.unsubscribe()
-  }, [])
-  useEffect(() => {
-    if (!userId) { setJourney(null); setCompare(null); return }
     loadJourney().then(async j => {
       setJourney(j)
       if (j?.afterId) {
@@ -459,11 +454,7 @@ export default function App() {
         if (b && a) setCompare({ before: b, after: a })
       }
     })
-  }, [userId])
-  async function signIn() {
-    const r = await lovable.auth.signInWithOAuth('google', { redirect_uri: window.location.origin })
-    if (r.error) setError('No se pudo iniciar sesión con Google.')
-  }
+  }, [])
 
   async function analyzeLipPhoto(image: string) {
     const request = ++lipRequest.current
@@ -543,7 +534,7 @@ export default function App() {
             <Icon name="shield" size={13} /> Admin
           </Button>
         </nav>
-        <button className="profile-button" aria-label={userId ? 'Cerrar sesión' : 'Iniciar sesión'} title={userId ? 'Cerrar sesión' : 'Iniciar sesión con Google'} onClick={() => userId ? supabase.auth.signOut() : signIn()}><Icon name="user" size={19} /></button>
+        {/* Botón de perfil: Firebase Auth pendiente de integración */}
       </header>
 
       {view === 'Admin' && <AdminPanel onBack={() => navigate('Inicio')} />}
