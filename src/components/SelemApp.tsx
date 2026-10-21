@@ -144,6 +144,7 @@ function Home({ onSkin, onLips }: { onSkin: () => void; onLips: () => void }) {
 function Scanner({ onAnalyze, lips = false }: { onAnalyze: (image: string) => void; lips?: boolean }) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const streamRef = useRef<MediaStream | null>(null)
   const [cameraOpen, setCameraOpen] = useState(false)
   const [message, setMessage] = useState('Abre la cámara para tomar tu foto')
@@ -191,9 +192,31 @@ function Scanner({ onAnalyze, lips = false }: { onAnalyze: (image: string) => vo
         <div className="camera-hint">{message}</div>
       </div>
       <canvas ref={canvasRef} hidden />
-      <div className="photo-actions">
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        hidden
+        onChange={(e) => {
+          const file = e.target.files?.[0]
+          if (!file) return
+          const reader = new FileReader()
+          reader.onload = () => {
+            if (typeof reader.result === 'string') {
+              onAnalyze(reader.result)
+            }
+          }
+          reader.readAsDataURL(file)
+        }}
+      />
+      <div className="photo-actions" style={{ display: 'flex', flexDirection: 'column', gap: '12px', alignItems: 'center' }}>
         {!cameraOpen ? (
-          <Button className="scan-trigger" onClick={openCamera}><span><Icon name="camera" size={24} /></span>Abrir cámara</Button>
+          <>
+            <Button className="scan-trigger" onClick={openCamera}><span><Icon name="camera" size={24} /></span>Abrir cámara</Button>
+            <Button variant="ghost" className="secondary-button" onClick={() => fileInputRef.current?.click()} style={{ borderRadius: 99, border: '1px solid rgba(201,168,122,.5)' }}>
+              <span><Icon name="upload" size={18} /></span> Subir foto de tu galería
+            </Button>
+          </>
         ) : (
           <Button className="scan-trigger" onClick={capturePhoto}><span><Icon name="sparkle" size={24} /></span>Capturar y analizar</Button>
         )}
@@ -476,9 +499,12 @@ export default function App() {
           saveJourney(done); setJourney(done); setAfterMode(false)
           setCompare({ before, after: scan })
         } else { setLastScan(scan); setSkin(res.analysis); setPhoto(small) }
-      } else setError(res.error)
-    } catch {
-      setError('No pudimos analizar tu piel. Intenta de nuevo.')
+      } else {
+        setError(res.error || 'No se pudo analizar la foto.')
+      }
+    } catch (err) {
+      console.error('Error al analizar rostro:', err)
+      setError(err instanceof Error ? err.message : 'No pudimos analizar tu piel. Intenta de nuevo.')
     }
     setLoading(false)
     window.scrollTo({ top: 0, behavior: 'smooth' })

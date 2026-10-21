@@ -47,7 +47,8 @@ export async function runSkinAnalysis(image: string): Promise<SkinAnalysis> {
     const status = (failure as { statusCode?: number })?.statusCode;
     if (status === 429) throw new Error("Demasiadas solicitudes. Intenta en unos segundos.");
     if (status === 402) throw new Error("Se agotaron los créditos de IA del espacio de trabajo.");
-    throw new Error("No pudimos analizar tu piel. Intenta de nuevo.");
+    const msg = failure instanceof Error ? failure.message : typeof failure === 'string' ? failure : '';
+    throw new Error(msg ? `Error de IA: ${msg}` : "No pudimos analizar tu piel. Intenta de nuevo.");
   }
   return normalizeSkinAnalysis(JSON.parse(text.slice(text.indexOf("{"), text.lastIndexOf("}") + 1)));
 }
