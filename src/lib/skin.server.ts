@@ -1,5 +1,6 @@
 import { createOpenAI } from "@ai-sdk/openai";
-import { streamText } from "ai";
+import { createGoogleGenerativeAI } from "@ai-sdk/google";
+import { generateText, streamText } from "ai";
 import { createLovableAiGatewayRunIdFetch } from "./run-id.server";
 import { normalizeSkinAnalysis, SKIN_REFERENCE } from "./skin-guide";
 import type { SkinAnalysis } from "./analysis-types";
@@ -24,15 +25,50 @@ Reglas: 3 a 5 concerns ordenados por importancia; morning 3-5 pasos terminando e
 Si la foto no muestra un rostro con claridad, pon isFace=false, categories=[], listas vacías y explica cómo repetir la foto en summary.`;
 
 export async function runSkinAnalysis(image: string): Promise<SkinAnalysis> {
-  const apiKey = process.env['LOVABLE_API_KEY'];
-  if (!apiKey) throw new Error("Falta configurar la IA.");
+  const geminiApiKey = process.env['GEMINI_API_KEY'] || process.env['GOOGLE_GENERATIVE_AI_API_KEY'];
+  const lovableApiKey = process.env['LOVABLE_API_KEY'];
+
+  // Si hay API key de Gemini (Google AI Studio)
+  if (geminiApiKey) {
+    const google = createGoogleGenerativeAI({ apiKey: geminiApiKey });
+
+    // image es un data URL como "data:image/jpeg;base64,/9j/..."
+    // Extraer mimeType y datos base64 puros para el SDK
+    const [meta, b64] = image.split(',');
+    const mimeType = (meta.match(/data:([^;]+);/) ?? [])[1] ?? 'image/jpeg';
+    const imageData = Buffer.from(b64, 'base64');
+
+    const { text } = await generateText({
+      model: google('gemini-2.5-flash'),
+      messages: [
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: PROMPT },
+            { type: 'image', image: imageData, mimeType: mimeType as `image/${string}` }
+          ]
+        }
+      ]
+    });
+
+    const cleaned = text.replace(/```json\n?/g, '').replace(/```/g, '').trim();
+    const parsed = JSON.parse(cleaned.slice(cleaned.indexOf('{'), cleaned.lastIndexOf('}') + 1));
+    return normalizeSkinAnalysis(parsed);
+  }
+
+  // Fallback con Lovable Gateway
+  if (!lovableApiKey) {
+    throw new Error("Falta configurar la IA. Agrega GEMINI_API_KEY en Netlify.");
+  }
+
   const runIdFetch = createLovableAiGatewayRunIdFetch();
   const provider = createOpenAI({
     baseURL: "https://ai.gateway.lovable.dev/v1",
-    apiKey,
-    headers: { "Lovable-API-Key": apiKey, "X-Lovable-AIG-SDK": "vercel-ai-sdk" },
+    apiKey: lovableApiKey,
+    headers: { "Lovable-API-Key": lovableApiKey, "X-Lovable-AIG-SDK": "vercel-ai-sdk" },
     fetch: runIdFetch.fetch,
   });
+
   let failure: unknown;
   const result = streamText({
     model: provider.responses("openai/gpt-6-astra"),
@@ -42,6 +78,7 @@ export async function runSkinAnalysis(image: string): Promise<SkinAnalysis> {
       openai: { forceReasoning: true, reasoningEffort: "medium", reasoningSummary: "auto", store: false, include: ["reasoning.encrypted_content"] },
     },
   });
+
   const text = await result.text;
   if (failure || !text) {
     const status = (failure as { statusCode?: number })?.statusCode;

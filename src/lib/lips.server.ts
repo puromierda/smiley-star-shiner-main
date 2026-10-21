@@ -1,5 +1,6 @@
 import { createOpenAI } from '@ai-sdk/openai'
-import { APICallError, Output, streamText } from 'ai'
+import { createGoogleGenerativeAI } from '@ai-sdk/google'
+import { APICallError, Output, generateText, streamText } from 'ai'
 import { createLovableAiGatewayRunIdFetch } from './run-id.server.ts'
 import { lipAnalysisSchema, normalizeLipAnalysis, LIP_CARE_STEPS, LIP_CARE_AVOID } from './lip-analysis'
 
@@ -11,19 +12,53 @@ Usa exclusivamente estos pasos de cuidado: ${JSON.stringify(LIP_CARE_STEPS)}. Pr
 Si no hay un rostro con los labios claramente visibles, isFace=false, explica cómo repetir la foto en summary y devuelve los demás textos vacíos y listas vacías.`
 
 export async function runLipAnalysis(image: string) {
-  const apiKey = process.env['LOVABLE_API_KEY']
-  if (!apiKey) throw new Error('Falta configurar la IA.')
+  const geminiApiKey = process.env['GEMINI_API_KEY'] || process.env['GOOGLE_GENERATIVE_AI_API_KEY']
+  const lovableApiKey = process.env['LOVABLE_API_KEY']
+
+  if (geminiApiKey) {
+    const google = createGoogleGenerativeAI({ apiKey: geminiApiKey })
+
+    // image es un data URL como "data:image/jpeg;base64,/9j/..."
+    const [meta, b64] = image.split(',')
+    const mimeType = (meta.match(/data:([^;]+);/) ?? [])[1] ?? 'image/jpeg'
+    const imageData = Buffer.from(b64, 'base64')
+
+    const { text } = await generateText({
+      model: google('gemini-2.5-flash'),
+      messages: [
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: `${INSTRUCTIONS}\n\nResponde estrictamente con un JSON con el siguiente formato:\n{"isFace":boolean,"summary":string,"faceShape":string,"lipShape":string,"balance":string,"steps":[],"colors":[],"avoid":[]}` },
+            { type: 'image', image: imageData, mimeType: mimeType as `image/${string}` }
+          ]
+        }
+      ]
+    })
+
+    const cleaned = text.replace(/```json\n?/g, '').replace(/```/g, '').trim()
+    const parsed = JSON.parse(cleaned.slice(cleaned.indexOf('{'), cleaned.lastIndexOf('}') + 1))
+    return normalizeLipAnalysis(parsed)
+  }
+
+  if (!lovableApiKey) {
+    throw new Error('Falta configurar la IA. Agrega GEMINI_API_KEY en Netlify.')
+  }
+
   const runIdFetch = createLovableAiGatewayRunIdFetch()
   const provider = createOpenAI({
-    baseURL: 'https://ai.gateway.lovable.dev/v1', apiKey,
-    headers: { 'Lovable-API-Key': apiKey, 'X-Lovable-AIG-SDK': 'vercel-ai-sdk' },
+    baseURL: 'https://ai.gateway.lovable.dev/v1', apiKey: lovableApiKey,
+    headers: { 'Lovable-API-Key': lovableApiKey, 'X-Lovable-AIG-SDK': 'vercel-ai-sdk' },
     fetch: runIdFetch.fetch,
   })
   let failure: unknown
+  const [metaFb, b64Fb] = image.split(',')
+  const mimeTypeFb = (metaFb.match(/data:([^;]+);/) ?? [])[1] ?? 'image/jpeg'
+  const imageDataFb = Buffer.from(b64Fb, 'base64')
   const result = streamText({
     model: provider.responses('openai/gpt-6-astra'),
     instructions: INSTRUCTIONS,
-    messages: [{ role: 'user', content: [{ type: 'text', text: 'Recomienda un cuidado natural de labios sin maquillaje según este rostro, sin prometer aumento real de volumen.' }, { type: 'image', image: new URL(image) }] }],
+    messages: [{ role: 'user', content: [{ type: 'text', text: 'Recomienda un cuidado natural de labios sin maquillaje según este rostro, sin prometer aumento real de volumen.' }, { type: 'image', image: imageDataFb, mimeType: mimeTypeFb as `image/${string}` }] }],
     output: Output.object({ schema: lipAnalysisSchema }),
     maxRetries: 0,
     onError: ({ error }) => { failure = error },
