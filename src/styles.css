@@ -1,6 +1,6 @@
-@import "tailwindcss";
-@import "tw-animate-css";
+@import "tailwindcss" source(none);
 @source "../src";
+@import "tw-animate-css";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -586,3 +586,17 @@ button { color: inherit; }
   .routine-step { padding: 24px 20px; }
   .lip-care-page .ai-product-header { grid-template-columns: minmax(0, 1fr); text-align: center; }
 }
+
+/* Formas de cara, maquillaje y paletas */
+.style-section { text-align: center; }
+.style-intro { max-width: 680px; margin: 12px auto 20px; font-size: 17px; line-height: 1.6; color: var(--muted-foreground); }
+.style-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); max-width: 1080px; gap: 18px; margin: 28px auto; }
+.style-card { background: var(--card); border: 1px solid var(--border); border-radius: 22px; padding: 24px; text-align: center; margin-bottom: 18px; }
+.style-card h3 { font-size: 24px; margin-bottom: 8px; text-transform: capitalize; }
+.style-card p, .style-card li { font-size: 16px; line-height: 1.55; }
+.style-card ul { list-style: none; padding: 0; margin: 12px 0; display: grid; gap: 6px; }
+.style-palette { display: flex; flex-wrap: wrap; justify-content: center; gap: 14px; margin-top: 14px; }
+.style-swatch { display: grid; justify-items: center; gap: 4px; width: 78px; }
+.style-swatch span { width: 46px; height: 46px; border-radius: 999px; border: 2px solid var(--card); box-shadow: 0 0 0 1px var(--border); }
+.style-swatch b { font-size: 13px; } .style-swatch small { font-size: 12px; color: var(--muted-foreground); }
+.style-photo { width: 180px; height: 180px; object-fit: cover; border-radius: 999px; margin: 16px auto; display: block; }

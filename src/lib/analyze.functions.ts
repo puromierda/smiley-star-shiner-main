@@ -2,7 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 
 export const analyzeSkin = createServerFn({ method: "POST" })
-  .validator((data) =>
+  .inputValidator((data) =>
     z.object({ image: z.string().startsWith("data:image/").max(8_000_000) }).parse(data),
   )
   .handler(async ({ data }) => {

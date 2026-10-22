@@ -4,13 +4,14 @@ import { analyzeSkin } from '@/lib/analyze.functions'
 import { analyzeLips } from '@/lib/lips.functions'
 import type { LipAnalysis } from '@/lib/lip-analysis'
 import { LipResult } from '@/components/LipResult'
-import { LipsPage } from '@/components/LipsPage'
-import { AdminPanel } from '@/components/AdminPanel'
+import { FaceShapesSection, FaceStyleResult } from '@/components/FaceStyle'
+import { analyzeFaceStyle } from '@/lib/face-style.functions'
+import type { FaceStyleAnalysis } from '@/lib/face-style'
 import { Button } from '@/components/ui/button'
 import type { SkinAnalysis, RoutineStep } from '@/lib/analysis-types'
 import { categoryName, SKIN_CATEGORIES, type CategoryKey } from '@/lib/skin-guide'
 import faceScan from '@/assets/face-scan.jpg'
-// Firebase auth se integrará aquí
+import { supabase } from '@/integrations/supabase/client'
 import { lovable } from '@/integrations/lovable/index'
 import { daysSince, loadJourney, loadScan, saveJourney, saveScan, type Journey, type SavedScan } from '@/lib/skin-journal'
 
@@ -29,7 +30,7 @@ function shrinkImage(src: string, max = 1024): Promise<string> {
   })
 }
 
-type View = 'Inicio' | 'Mi piel' | 'Labios' | 'Rutinas' | 'Premium' | 'Admin'
+type View = 'Estilo' | 'Inicio' | 'Mi piel' | 'Labios' | 'Rutinas' | 'Premium'
 
 // Modo simulado: acceso completo sin validación de backend
 const isDev = true
@@ -79,7 +80,7 @@ function FaceDemo() {
   )
 }
 
-function Home({ onSkin, onLips }: { onSkin: () => void; onLips: () => void }) {
+function Home({ onSkin, onLips, onStyle }: { onSkin: () => void; onLips: () => void; onStyle: () => void }) {
   return (
     <main className="page-shell fade-up">
       <section className="hero-grid">
@@ -93,7 +94,7 @@ function Home({ onSkin, onLips }: { onSkin: () => void; onLips: () => void }) {
           </p>
           <div className="hero-actions">
             <button className="primary-button" onClick={onSkin}><Icon name="camera" /> Escanear mi piel <Icon name="arrow" size={17} /></button>
-            <Button variant="ghost" className="secondary-button" onClick={onLips}><Icon name="lips" /> Labios con más volumen</Button>
+            <Button variant="ghost" className="secondary-button" onClick={onLips}><Icon name="lips" /> Labios hidratados</Button>
           </div>
           <div className="trust-row">
             <span><Icon name="sparkle" size={17} /> Análisis con IA</span>
@@ -137,14 +138,14 @@ function Home({ onSkin, onLips }: { onSkin: () => void; onLips: () => void }) {
           ))}
         </div>
       </section>
+      <FaceShapesSection onScan={onStyle} />
     </main>
   )
 }
 
-function Scanner({ onAnalyze, lips = false }: { onAnalyze: (image: string) => void; lips?: boolean }) {
+function Scanner({ onAnalyze, lips = false, style = false }: { onAnalyze: (image: string) => void; lips?: boolean; style?: boolean }) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
-  const fileInputRef = useRef<HTMLInputElement>(null)
   const streamRef = useRef<MediaStream | null>(null)
   const [cameraOpen, setCameraOpen] = useState(false)
   const [message, setMessage] = useState('Abre la cámara para tomar tu foto')
@@ -181,9 +182,9 @@ function Scanner({ onAnalyze, lips = false }: { onAnalyze: (image: string) => vo
   return (
     <main className="scanner-page fade-up">
       <div className="scanner-copy">
-        <p className="font-script section-script">{lips ? 'Labios con más volumen · IA' : 'Escaneo facial con IA'}</p>
+        {style ? <><p className="font-script section-script">Maquillaje y color · IA</p><h1 className="font-display">Descubre tu forma de cara</h1><p>Foto de frente, con el pelo recogido, sin filtros y con luz natural.</p></> : <><p className="font-script section-script">{lips ? 'Labios hidratados · IA' : 'Escaneo facial con IA'}</p>
         <h1 className="font-display">{lips ? 'Escanea tu rostro' : 'Analicemos tu piel'}</h1>
-        <p>{lips ? 'Cuidados naturales, sin maquillaje, para labios hidratados y de aspecto más terso. No aumentan el volumen real. Foto de frente, labios relajados, sin filtros ni labial.' : 'Toma una foto de frente, con el rostro limpio, sin filtros y con buena luz natural.'}</p>
+        <p>{lips ? 'Cuidados naturales, sin maquillaje, para labios hidratados y de aspecto más terso. No aumentan el volumen real. Foto de frente, labios relajados, sin filtros ni labial.' : 'Toma una foto de frente, con el rostro limpio, sin filtros y con buena luz natural.'}</p></>}
       </div>
       <div className={`camera-view ${cameraOpen ? 'camera-live' : ''}`}>
         <video ref={videoRef} className="camera-feed" playsInline muted />
@@ -192,31 +193,9 @@ function Scanner({ onAnalyze, lips = false }: { onAnalyze: (image: string) => vo
         <div className="camera-hint">{message}</div>
       </div>
       <canvas ref={canvasRef} hidden />
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept="image/*"
-        hidden
-        onChange={(e) => {
-          const file = e.target.files?.[0]
-          if (!file) return
-          const reader = new FileReader()
-          reader.onload = () => {
-            if (typeof reader.result === 'string') {
-              onAnalyze(reader.result)
-            }
-          }
-          reader.readAsDataURL(file)
-        }}
-      />
-      <div className="photo-actions" style={{ display: 'flex', flexDirection: 'column', gap: '12px', alignItems: 'center' }}>
+      <div className="photo-actions">
         {!cameraOpen ? (
-          <>
-            <Button className="scan-trigger" onClick={openCamera}><span><Icon name="camera" size={24} /></span>Abrir cámara</Button>
-            <Button variant="ghost" className="secondary-button" onClick={() => fileInputRef.current?.click()} style={{ borderRadius: 99, border: '1px solid rgba(201,168,122,.5)' }}>
-              <span><Icon name="upload" size={18} /></span> Subir foto de tu galería
-            </Button>
-          </>
+          <Button className="scan-trigger" onClick={openCamera}><span><Icon name="camera" size={24} /></span>Abrir cámara</Button>
         ) : (
           <Button className="scan-trigger" onClick={capturePhoto}><span><Icon name="sparkle" size={24} /></span>Capturar y analizar</Button>
         )}
@@ -413,12 +392,10 @@ export default function App() {
   const [photo, setPhoto] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [routineKey, setRoutineKey] = useState<CategoryKey>('mixta')
-  const [lipScanning, setLipScanning] = useState(false)
 
   function navigate(next: View) {
     setView(next)
     setPhoto(null); setError(null)
-    setLipScanning(false)
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
@@ -433,6 +410,22 @@ export default function App() {
   const [lipLoading, setLipLoading] = useState(false)
   const [lipError, setLipError] = useState<string | null>(null)
   const lipRequest = useRef(0)
+  const runStyle = useServerFn(analyzeFaceStyle)
+  const [styleResult, setStyleResult] = useState<{ image: string; data: FaceStyleAnalysis } | null>(null)
+  const [styleLoading, setStyleLoading] = useState(false)
+  const [styleError, setStyleError] = useState<string | null>(null)
+  async function analyzeStylePhoto(image: string) {
+    setStyleLoading(true); setStyleError(null)
+    try {
+      const small = await shrinkImage(image, 720)
+      const result = await runStyle({ data: { image: small } })
+      if (result.ok) setStyleResult({ image: small, data: result.analysis })
+      else setStyleError(result.error)
+    } catch (e) {
+      setStyleError(e instanceof Error ? e.message : 'No se pudo analizar la foto.')
+    }
+    setStyleLoading(false)
+  }
   const [skin, setSkin] = useState<SkinAnalysis | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [journey, setJourney] = useState<Journey | null>(null)
@@ -440,13 +433,18 @@ export default function App() {
   const [afterMode, setAfterMode] = useState(false)
   const [compare, setCompare] = useState<{ before: SavedScan; after: SavedScan } | null>(null)
 
-  // TODO: reemplazar con Firebase Auth
-  const userId: string | null = null
-  function signIn() {
-    // Placeholder para la futura integración con Firebase Auth
-    console.info('Iniciar sesión: pendiente de integración con Firebase Auth')
-  }
+  const [userId, setUserId] = useState<string | null>(null)
   useEffect(() => {
+    lipRequest.current += 1
+    setLipResult(null); setLipError(null); setLipLoading(false)
+  }, [userId])
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => setUserId(data.session?.user.id ?? null))
+    const { data } = supabase.auth.onAuthStateChange((_e, session) => setUserId(session?.user.id ?? null))
+    return () => data.subscription.unsubscribe()
+  }, [])
+  useEffect(() => {
+    if (!userId) { setJourney(null); setCompare(null); return }
     loadJourney().then(async j => {
       setJourney(j)
       if (j?.afterId) {
@@ -454,7 +452,11 @@ export default function App() {
         if (b && a) setCompare({ before: b, after: a })
       }
     })
-  }, [])
+  }, [userId])
+  async function signIn() {
+    const r = await lovable.auth.signInWithOAuth('google', { redirect_uri: window.location.origin })
+    if (r.error) setError('No se pudo iniciar sesión con Google.')
+  }
 
   async function analyzeLipPhoto(image: string) {
     const request = ++lipRequest.current
@@ -478,24 +480,16 @@ export default function App() {
     try {
       const res = await runSkin({ data: { image: small } })
       if (res.ok) {
-        let scan: SavedScan | null = null
-        try {
-          scan = await saveScan(small, res.analysis)
-        } catch {
-          scan = { id: String(Date.now()), date: new Date().toISOString(), photo: small, analysis: res.analysis }
-        }
+        const scan = await saveScan(small, res.analysis)
         const before = journey && await loadScan(journey.beforeId)
         if (afterMode && journey && before && res.analysis.isFace) {
           const done = { ...journey, afterId: scan.id }
           saveJourney(done); setJourney(done); setAfterMode(false)
           setCompare({ before, after: scan })
         } else { setLastScan(scan); setSkin(res.analysis); setPhoto(small) }
-      } else {
-        setError(res.error || 'No se pudo analizar la foto.')
-      }
-    } catch (err) {
-      console.error('Error al analizar rostro:', err)
-      setError(err instanceof Error ? err.message : 'No pudimos analizar tu piel. Intenta de nuevo.')
+      } else setError(res.error)
+    } catch {
+      setError('No pudimos analizar tu piel. Intenta de nuevo.')
     }
     setLoading(false)
     window.scrollTo({ top: 0, behavior: 'smooth' })
@@ -515,67 +509,28 @@ export default function App() {
     <div className="app">
       <header className="topbar">
         <button className="brand-button" onClick={() => navigate('Inicio')}><Brand /></button>
-        <nav className="desktop-nav">
-          {nav.map(([label]) => <Button variant="ghost" key={label} className={view === label ? 'active' : ''} onClick={() => navigate(label)}>{label}</Button>)}
-          <Button
-            variant="ghost"
-            className={view === 'Admin' ? 'active' : ''}
-            onClick={() => navigate('Admin')}
-            style={{
-              fontSize: '11px',
-              fontWeight: 700,
-              padding: '6px 14px',
-              borderRadius: '99px',
-              border: '1px solid rgba(201,168,122,.35)',
-              color: view === 'Admin' ? '#fff' : 'var(--color-rose-deep)',
-              background: view === 'Admin' ? 'var(--color-rose)' : 'rgba(255,255,255,0.7)',
-            }}
-          >
-            <Icon name="shield" size={13} /> Admin
-          </Button>
-        </nav>
-        {/* Botón de perfil: Firebase Auth pendiente de integración */}
+        <nav className="desktop-nav">{nav.map(([label]) => <Button variant="ghost" key={label} className={view === label ? 'active' : ''} onClick={() => navigate(label)}>{label}</Button>)}</nav>
+        <button className="profile-button" aria-label={userId ? 'Cerrar sesión' : 'Iniciar sesión'} title={userId ? 'Cerrar sesión' : 'Iniciar sesión con Google'} onClick={() => userId ? supabase.auth.signOut() : signIn()}><Icon name="user" size={19} /></button>
       </header>
 
-      {view === 'Admin' && <AdminPanel onBack={() => navigate('Inicio')} />}
-      {view === 'Inicio' && <Home onSkin={() => navigate('Mi piel')} onLips={() => navigate('Labios')} />}
-      {view === 'Labios' && (
-        lipLoading ? (
-          <main className="loading-page fade-up">
-            <div className="loading-orb"><Icon name="lips" size={28} /></div>
-            <p className="font-script">Analizando tu rostro…</p>
-            <span>Preparando tu rutina natural de labios</span>
-          </main>
-        ) : lipResult ? (
-          <LipResult
-            image={lipResult.image}
-            data={lipResult.data}
-            onReset={() => { setLipResult(null); setLipError(null); setLipScanning(false) }}
-          />
-        ) : lipScanning ? (
-          <main className="fade-up" style={{ minHeight: '100vh', paddingTop: '100px', paddingBottom: '90px' }}>
-            <div style={{ maxWidth: 640, margin: '0 auto 16px', padding: '0 20px', display: 'flex', justifyContent: 'flex-start' }}>
-              <Button variant="ghost" onClick={() => setLipScanning(false)} className="back-button">
-                ← Volver a Labios más voluminosos
-              </Button>
-            </div>
-            {lipError && (
-              <div className="ai-disclaimer" role="alert" style={{ maxWidth: 640, margin: '0 auto 20px' }}>
-                <span><b>No se pudo analizar</b>{lipError}</span>
-              </div>
-            )}
-            <Scanner key="lips" lips onAnalyze={analyzeLipPhoto} />
-          </main>
-        ) : (
-          <LipsPage
-            onStartScan={() => setLipScanning(true)}
-            onSignIn={signIn}
-            userId={userId}
-          />
-        )
-      )}
+      {view === 'Inicio' && <Home onSkin={() => navigate('Mi piel')} onLips={() => navigate('Labios')} onStyle={() => navigate('Estilo')} />}
+      {view === 'Estilo' && (!userId
+        ? <main className="scanner-page fade-up"><div className="scanner-copy"><p className="font-script section-script">Maquillaje y color</p><h1 className="font-display">Entra para analizar tu cara</h1></div>{error && <p role="alert">{error}</p>}<Button className="scan-trigger" onClick={signIn}><Icon name="user" /> Continuar con Google</Button></main>
+        : styleLoading
+          ? <main className="loading-page fade-up"><div className="loading-orb"><Icon name="sparkle" size={28} /></div><p className="font-script">Analizando tu rostro…</p><span>Buscando tu forma de cara y tu paleta</span></main>
+          : styleResult
+            ? <FaceStyleResult image={styleResult.image} data={styleResult.data} onReset={() => setStyleResult(null)} />
+            : <>{styleError && <div className="ai-disclaimer" role="alert"><span><b>No se pudo analizar</b>{styleError}</span></div>}<Scanner key="style" style onAnalyze={analyzeStylePhoto} /></>)}
+      {view === 'Labios' && (!userId
+        ? <main className="scanner-page fade-up"><div className="scanner-copy"><p className="font-script section-script">Labios hidratados</p><h1 className="font-display">Entra para escanear tu rostro</h1></div>{error && <p role="alert">{error}</p>}<Button className="scan-trigger" onClick={signIn}><Icon name="user" /> Continuar con Google</Button></main>
+        : lipLoading
+          ? <main className="loading-page fade-up"><div className="loading-orb"><Icon name="lips" size={28} /></div><p className="font-script">Analizando tu rostro…</p><span>Preparando tu rutina natural de labios</span></main>
+          : lipResult
+            ? <LipResult image={lipResult.image} data={lipResult.data} onReset={() => { setLipResult(null); setLipError(null) }} />
+            : <>{lipError && <div className="ai-disclaimer" role="alert"><span><b>No se pudo analizar</b>{lipError}</span></div>}<Scanner key="lips" lips onAnalyze={analyzeLipPhoto} /></>)}
       {view === 'Rutinas' && <Routines open={routineKey} onOpen={setRoutineKey} onScan={() => navigate('Mi piel')} />}
-      {view === 'Mi piel' && (loading
+      {view === 'Mi piel' && !userId && <main className="scanner-page fade-up"><div className="scanner-copy"><p className="font-script section-script">Tu cuenta</p><h1 className="font-display">Entra para guardar tu piel</h1><p>Tus escaneos, rutinas y fotos se guardan en tu cuenta y los verás en cualquier equipo.</p></div>{error && <p role="alert">{error}</p>}<div className="photo-actions"><button className="scan-trigger" onClick={signIn}><span><Icon name="user" size={24} /></span>Continuar con Google</button></div></main>}
+      {view === 'Mi piel' && userId && (loading
         ? <main className="loading-page fade-up"><div className="loading-orb"><Icon name="sparkle" size={28} /></div><p className="font-script">Analizando tu piel…</p><span>Identificando necesidades y preparando tu rutina</span></main>
         : compare
           ? <Comparison before={compare.before} after={compare.after} onClose={closeCompare} />

@@ -1,9 +1,6 @@
-import { createOpenAI } from "@ai-sdk/openai";
-import { streamText } from "ai";
-import { createLovableAiGatewayRunIdFetch } from "./run-id.server";
+import { geminiJson, parseJson } from "./gemini.server";
 import { normalizeSkinAnalysis, SKIN_REFERENCE } from "./skin-guide";
 import type { SkinAnalysis } from "./analysis-types";
-import { generateGeminiVisionJson } from "./gemini-client.server";
 
 const PROMPT = `Eres la especialista en cuidado de la piel de "Selem Beauty", con criterio de cosmetóloga experta. Analiza la foto del rostro.
 Evalúa solo lo que se observa con claridad: tipo de piel aparente, brillo, poros, textura, deshidratación, rojeces, manchas, líneas finas, imperfecciones y ojeras. No diagnostiques enfermedades; si ves algo que parece requerir un médico (lesiones, acné severo, lunares irregulares), indícalo en medicalNote.
@@ -25,68 +22,6 @@ Reglas: 3 a 5 concerns ordenados por importancia; morning 3-5 pasos terminando e
 Si la foto no muestra un rostro con claridad, pon isFace=false, categories=[], listas vacías y explica cómo repetir la foto en summary.`;
 
 export async function runSkinAnalysis(image: string): Promise<SkinAnalysis> {
-  const geminiApiKey =
-    process.env['GEMINI_API_KEY'] ||
-    process.env['VITE_GEMINI_API_KEY'] ||
-    process.env['GOOGLE_GENERATIVE_AI_API_KEY'];
-  const lovableApiKey = process.env['LOVABLE_API_KEY'];
-
-  // Si hay API key de Gemini (Google AI Studio)
-  if (geminiApiKey) {
-    try {
-      // image es "data:image/jpeg;base64,/9j/..." — extraemos sólo el base64 puro
-      const commaIdx = image.indexOf(',');
-      const meta = commaIdx > -1 ? image.slice(0, commaIdx) : '';
-      const b64 = commaIdx > -1 ? image.slice(commaIdx + 1) : image;
-      const mimeType = (meta.match(/data:([^;]+);/) ?? [])[1] ?? 'image/jpeg';
-
-      const parsed = await generateGeminiVisionJson<unknown>({
-        apiKey: geminiApiKey,
-        prompt: PROMPT,
-        imageBase64: b64,
-        mimeType,
-      });
-
-      return normalizeSkinAnalysis(parsed);
-    } catch (geminiErr) {
-      console.error('[skin] Gemini error:', geminiErr instanceof Error ? geminiErr.message : geminiErr);
-      if (!lovableApiKey) {
-        throw geminiErr;
-      }
-      // Si hay Lovable key, dejamos caer al fallback de Lovable
-    }
-  }
-
-  // Fallback con Lovable Gateway
-  if (!lovableApiKey) {
-    throw new Error("Falta configurar la IA. Agrega GEMINI_API_KEY en las variables de entorno.");
-  }
-
-  const runIdFetch = createLovableAiGatewayRunIdFetch();
-  const provider = createOpenAI({
-    baseURL: "https://ai.gateway.lovable.dev/v1",
-    apiKey: lovableApiKey,
-    headers: { "Lovable-API-Key": lovableApiKey, "X-Lovable-AIG-SDK": "vercel-ai-sdk" },
-    fetch: runIdFetch.fetch,
-  });
-
-  let failure: unknown;
-  const result = streamText({
-    model: provider.responses("openai/gpt-6-astra"),
-    messages: [{ role: "user", content: [{ type: "text", text: PROMPT }, { type: "file", data: image, mediaType: "image/jpeg" }] }],
-    onError: ({ error }) => { failure = error; console.error("AI skin error", (error as Error)?.message); },
-    providerOptions: {
-      openai: { forceReasoning: true, reasoningEffort: "medium", reasoningSummary: "auto", store: false, include: ["reasoning.encrypted_content"] },
-    },
-  });
-
-  const text = await result.text;
-  if (failure || !text) {
-    const status = (failure as { statusCode?: number })?.statusCode;
-    if (status === 429) throw new Error("Demasiadas solicitudes. Intenta en unos segundos.");
-    if (status === 402) throw new Error("Se agotaron los créditos de IA del espacio de trabajo.");
-    const msg = failure instanceof Error ? failure.message : typeof failure === 'string' ? failure : '';
-    throw new Error(msg ? `Error de IA: ${msg}` : "No pudimos analizar tu piel. Intenta de nuevo.");
-  }
-  return normalizeSkinAnalysis(JSON.parse(text.slice(text.indexOf("{"), text.lastIndexOf("}") + 1)));
+  const text = await geminiJson(PROMPT, image);
+  return normalizeSkinAnalysis(parseJson(text) as Parameters<typeof normalizeSkinAnalysis>[0]);
 }
