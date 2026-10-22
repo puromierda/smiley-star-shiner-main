@@ -510,27 +510,22 @@ export default function App() {
       <header className="topbar">
         <button className="brand-button" onClick={() => navigate('Inicio')}><Brand /></button>
         <nav className="desktop-nav">{nav.map(([label]) => <Button variant="ghost" key={label} className={view === label ? 'active' : ''} onClick={() => navigate(label)}>{label}</Button>)}</nav>
-        <button className="profile-button" aria-label={userId ? 'Cerrar sesión' : 'Iniciar sesión'} title={userId ? 'Cerrar sesión' : 'Iniciar sesión con Google'} onClick={() => userId ? supabase.auth.signOut() : signIn()}><Icon name="user" size={19} /></button>
+        {userId && <button className="profile-button" aria-label="Cerrar sesión" title="Cerrar sesión" onClick={() => supabase.auth.signOut()}><Icon name="user" size={19} /></button>}
       </header>
 
       {view === 'Inicio' && <Home onSkin={() => navigate('Mi piel')} onLips={() => navigate('Labios')} onStyle={() => navigate('Estilo')} />}
-      {view === 'Estilo' && (!userId
-        ? <main className="scanner-page fade-up"><div className="scanner-copy"><p className="font-script section-script">Maquillaje y color</p><h1 className="font-display">Entra para analizar tu cara</h1></div>{error && <p role="alert">{error}</p>}<Button className="scan-trigger" onClick={signIn}><Icon name="user" /> Continuar con Google</Button></main>
-        : styleLoading
-          ? <main className="loading-page fade-up"><div className="loading-orb"><Icon name="sparkle" size={28} /></div><p className="font-script">Analizando tu rostro…</p><span>Buscando tu forma de cara y tu paleta</span></main>
-          : styleResult
-            ? <FaceStyleResult image={styleResult.image} data={styleResult.data} onReset={() => setStyleResult(null)} />
-            : <>{styleError && <div className="ai-disclaimer" role="alert"><span><b>No se pudo analizar</b>{styleError}</span></div>}<Scanner key="style" style onAnalyze={analyzeStylePhoto} /></>)}
-      {view === 'Labios' && (!userId
-        ? <main className="scanner-page fade-up"><div className="scanner-copy"><p className="font-script section-script">Labios hidratados</p><h1 className="font-display">Entra para escanear tu rostro</h1></div>{error && <p role="alert">{error}</p>}<Button className="scan-trigger" onClick={signIn}><Icon name="user" /> Continuar con Google</Button></main>
-        : lipLoading
-          ? <main className="loading-page fade-up"><div className="loading-orb"><Icon name="lips" size={28} /></div><p className="font-script">Analizando tu rostro…</p><span>Preparando tu rutina natural de labios</span></main>
-          : lipResult
-            ? <LipResult image={lipResult.image} data={lipResult.data} onReset={() => { setLipResult(null); setLipError(null) }} />
-            : <>{lipError && <div className="ai-disclaimer" role="alert"><span><b>No se pudo analizar</b>{lipError}</span></div>}<Scanner key="lips" lips onAnalyze={analyzeLipPhoto} /></>)}
+      {view === 'Estilo' && (styleLoading
+        ? <main className="loading-page fade-up"><div className="loading-orb"><Icon name="sparkle" size={28} /></div><p className="font-script">Analizando tu rostro…</p><span>Buscando tu forma de cara y tu paleta</span></main>
+        : styleResult
+          ? <FaceStyleResult image={styleResult.image} data={styleResult.data} onReset={() => setStyleResult(null)} />
+          : <>{styleError && <div className="ai-disclaimer" role="alert"><span><b>No se pudo analizar</b>{styleError}</span></div>}<Scanner key="style" style onAnalyze={analyzeStylePhoto} /></>)}
+      {view === 'Labios' && (lipLoading
+        ? <main className="loading-page fade-up"><div className="loading-orb"><Icon name="lips" size={28} /></div><p className="font-script">Analizando tu rostro…</p><span>Preparando tu rutina natural de labios</span></main>
+        : lipResult
+          ? <LipResult image={lipResult.image} data={lipResult.data} onReset={() => { setLipResult(null); setLipError(null) }} />
+          : <>{lipError && <div className="ai-disclaimer" role="alert"><span><b>No se pudo analizar</b>{lipError}</span></div>}<Scanner key="lips" lips onAnalyze={analyzeLipPhoto} /></>)}
       {view === 'Rutinas' && <Routines open={routineKey} onOpen={setRoutineKey} onScan={() => navigate('Mi piel')} />}
-      {view === 'Mi piel' && !userId && <main className="scanner-page fade-up"><div className="scanner-copy"><p className="font-script section-script">Tu cuenta</p><h1 className="font-display">Entra para guardar tu piel</h1><p>Tus escaneos, rutinas y fotos se guardan en tu cuenta y los verás en cualquier equipo.</p></div>{error && <p role="alert">{error}</p>}<div className="photo-actions"><button className="scan-trigger" onClick={signIn}><span><Icon name="user" size={24} /></span>Continuar con Google</button></div></main>}
-      {view === 'Mi piel' && userId && (loading
+      {view === 'Mi piel' && (loading
         ? <main className="loading-page fade-up"><div className="loading-orb"><Icon name="sparkle" size={28} /></div><p className="font-script">Analizando tu piel…</p><span>Identificando necesidades y preparando tu rutina</span></main>
         : compare
           ? <Comparison before={compare.before} after={compare.after} onClose={closeCompare} />
