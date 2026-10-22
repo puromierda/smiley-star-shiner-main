@@ -7,7 +7,11 @@ export type Journey = { beforeId: string; startedAt: string; afterId: string | n
 const SCANS_KEY = 'selem_scans'
 const JOURNEY_KEY = 'selem_journey'
 
+/** Returns false when running in SSR (Node.js), true in the browser */
+const isBrowser = typeof window !== 'undefined' && typeof window.localStorage !== 'undefined'
+
 function getScans(): Record<string, SavedScan> {
+  if (!isBrowser) return {}
   try {
     return JSON.parse(localStorage.getItem(SCANS_KEY) ?? '{}')
   } catch {
@@ -16,6 +20,7 @@ function getScans(): Record<string, SavedScan> {
 }
 
 export async function loadScan(id: string): Promise<SavedScan | null> {
+  if (!isBrowser) return null
   const scans = getScans()
   const s = scans[id]
   if (!s) return null
@@ -23,6 +28,7 @@ export async function loadScan(id: string): Promise<SavedScan | null> {
 }
 
 export async function loadJourney(): Promise<Journey | null> {
+  if (!isBrowser) return null
   try {
     const raw = localStorage.getItem(JOURNEY_KEY)
     if (!raw) return null
@@ -36,13 +42,16 @@ export async function saveScan(photo: string, analysis: SkinAnalysis): Promise<S
   const id = `scan_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
   const date = new Date().toISOString()
   const scan: SavedScan = { id, date, photo, analysis }
-  const scans = getScans()
-  scans[id] = scan
-  localStorage.setItem(SCANS_KEY, JSON.stringify(scans))
+  if (isBrowser) {
+    const scans = getScans()
+    scans[id] = scan
+    localStorage.setItem(SCANS_KEY, JSON.stringify(scans))
+  }
   return scan
 }
 
 export async function saveJourney(j: Journey | null) {
+  if (!isBrowser) return
   if (!j) {
     localStorage.removeItem(JOURNEY_KEY)
   } else {
